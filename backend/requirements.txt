@@ -1,0 +1,15 @@
+fastapi
+uvicorn
+pydantic
+python-dotenv
+motor
+pymongo
+httpx
+langchain
+langgraph
+sentence-transformers
+torch
+scikit-learn
+rapidfuzz
+groq
+python-multipart
