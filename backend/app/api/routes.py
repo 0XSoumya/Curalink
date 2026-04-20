@@ -19,6 +19,7 @@ async def create_session():
         "chat_history": [],
         "top_docs": [],
         "buffer_docs": [],
+        "clinical_trials": [],
         "disease": None,
         "last_query": None,
         "updated_at": datetime.utcnow(),
@@ -38,6 +39,7 @@ async def chat(request: ChatRequest):
             "chat_history": [],
             "top_docs": [],
             "buffer_docs": [],
+            "clinical_trials": [],
             "disease": request.disease,
             "last_query": request.query,
             "updated_at": datetime.utcnow(),
@@ -51,16 +53,15 @@ async def chat(request: ChatRequest):
 
     # 🔹 Graph State
     state = {
-    "query": request.query,
-    "disease": request.disease,
-    "location": request.location,
-    "chat_history": session_data["chat_history"],
-    "session_id": session_id,
-    "top_docs": session_data.get("top_docs", []),
-    "buffer_docs": session_data.get("buffer_docs", [])
-}
-
-
+        "query": request.query,
+        "disease": request.disease,
+        "location": request.location,
+        "chat_history": session_data["chat_history"],
+        "session_id": session_id,
+        "top_docs": session_data.get("top_docs", []),
+        "buffer_docs": session_data.get("buffer_docs", []),
+        "clinical_trials": session_data.get("clinical_trials", [])
+    }
 
     # 🔥 Run Graph
     result = await graph.ainvoke(state)
@@ -75,6 +76,7 @@ async def chat(request: ChatRequest):
             "$set": {
                 "top_docs": result.get("top_docs", []),
                 "buffer_docs": result.get("buffer_docs", []),
+                "clinical_trials": result.get("clinical_trials", []),
                 "last_query": request.query,
             },
             "$push": {

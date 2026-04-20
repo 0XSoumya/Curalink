@@ -79,7 +79,7 @@ def expand_node(state: GraphState):
     return state
 
 
-# 🔥 SIMPLIFIED (no embeddings, no LLM dependency)
+# 🔥 Simplified sufficiency logic
 def sufficiency_node(state: GraphState):
     # If not follow-up OR topic shift → retrieve
     if not state["is_followup"] or state["is_topic_shift"]:
@@ -88,7 +88,7 @@ def sufficiency_node(state: GraphState):
 
     docs = state.get("top_docs", []) + state.get("buffer_docs", [])
 
-    # If we already have docs → reuse them
+    # If docs exist → reuse
     if docs:
         state["needs_retrieval"] = False
     else:
@@ -104,24 +104,41 @@ async def retrieve_node(state: GraphState):
     return state
 
 
+# 🔥 FIXED rerank (safe for follow-ups)
 def rerank_node(state: GraphState):
-    top_docs, buffer_docs = process_documents(
-        state["final_query"],
-        state["retrieval_results"]["pubmed"],
-        state["retrieval_results"]["openalex"]
-    )
-
-    state["top_docs"] = top_docs
-    state["buffer_docs"] = buffer_docs
+    # If we have fresh retrieval results from the current turn
+    if "retrieval_results" in state and state["retrieval_results"]:
+        top_docs, buffer_docs = process_documents(
+            state["final_query"],
+            state["retrieval_results"]["pubmed"],
+            state["retrieval_results"]["openalex"]
+        )
+        state["top_docs"] = top_docs
+        state["buffer_docs"] = buffer_docs
+    else:
+        # FOLLOW-UP SCENARIO: We skipped retrieval, so we must re-rank 
+        # the cached documents against the NEW follow-up query.
+        cached_docs = state.get("top_docs", []) + state.get("buffer_docs", [])
+        if cached_docs:
+            top_docs, buffer_docs = process_documents(
+                state["final_query"],
+                cached_docs,
+                []
+            )
+            state["top_docs"] = top_docs
+            state["buffer_docs"] = buffer_docs
 
     return state
 
 
+# 🔥 FIXED reasoning (safe access)
 def reasoning_node(state: GraphState):
+    docs = state.get("top_docs", []) + state.get("buffer_docs", [])
+
     state["final_output"] = generate_response(
         query=state["final_query"],
         disease=state["parsed"]["disease"],
-        docs=state["top_docs"] + state["buffer_docs"],
+        docs=docs,
         trials=state.get("clinical_trials", [])
     )
     return state

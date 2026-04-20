@@ -87,7 +87,22 @@ def expand_query(query: str, disease: str):
     disease = disease or ""
 
     prompt = f"""
-Generate 4 search queries combining disease and intent.
+You are generating search queries for a medical research system.
+
+Goal:
+Cover different aspects of the user's intent to maximize retrieval quality.
+
+Instructions:
+- Understand the intent of the query
+- Generate 4 diverse queries:
+  1. Direct query (original intent)
+  2. Broader/general version
+  3. Specific/technical version
+  4. Related aspect (e.g., side effects, mechanisms, outcomes)
+
+- Include disease context where relevant
+- Use medical/scientific phrasing when appropriate
+- Avoid repeating the same wording
 
 Return ONLY JSON:
 ["query1", "query2", "query3", "query4"]
