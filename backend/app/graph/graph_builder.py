@@ -43,6 +43,7 @@ def followup_node(state: GraphState):
 
 
 def rewrite_query_node(state: GraphState):
+    # Not a follow-up → use original
     if not state["is_followup"]:
         state["final_query"] = state["parsed"]["query"]
         return state
@@ -78,37 +79,20 @@ def expand_node(state: GraphState):
     return state
 
 
+# 🔥 SIMPLIFIED (no embeddings, no LLM dependency)
 def sufficiency_node(state: GraphState):
+    # If not follow-up OR topic shift → retrieve
     if not state["is_followup"] or state["is_topic_shift"]:
         state["needs_retrieval"] = True
         return state
 
     docs = state.get("top_docs", []) + state.get("buffer_docs", [])
 
-    if not docs:
+    # If we already have docs → reuse them
+    if docs:
+        state["needs_retrieval"] = False
+    else:
         state["needs_retrieval"] = True
-        return state
-
-    doc_text = ""
-    for d in docs[:6]:
-        doc_text += f"""
-Title: {d.get('title')}
-Abstract: {d.get('abstract')}
-"""
-
-    prompt = f"""
-Query: {state['final_query']}
-
-Documents:
-{doc_text}
-
-Can these answer the query?
-
-Answer ONLY: yes or no
-"""
-
-    decision = call_llm(prompt).lower()
-    state["needs_retrieval"] = "no" not in decision
 
     return state
 
@@ -166,6 +150,7 @@ def build_graph():
     graph.add_edge("rewrite", "expand")
     graph.add_edge("expand", "sufficiency")
 
+    # Conditional routing
     def route(state: GraphState):
         return "retrieve" if state["needs_retrieval"] else "rerank"
 
