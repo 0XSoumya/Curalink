@@ -9,17 +9,36 @@ def process_documents(query: str, pubmed_docs: List[Dict], openalex_docs: List[D
     # Combine docs
     docs = pubmed_docs + openalex_docs
 
+    # 🔥 FIXED: Deduplicate documents to reduce payload
+    seen_urls = set()
+    unique_docs = []
+    for d in docs:
+        url = d.get("url")
+        if url and url not in seen_urls:
+            seen_urls.add(url)
+            unique_docs.append(d)
+        elif not url:
+            unique_docs.append(d)
+            
+    docs = unique_docs
+
     if not docs:
         return [], []
 
+    # 🔥 FIXED: Cap the total documents sent to Voyage to prevent API crashes
+    docs = docs[:200]
+
     # Prepare text for reranking
-    texts = [
-        (doc.get("title") or "") + " " + (doc.get("abstract") or "")
-        for doc in docs
-    ]
+    texts = []
+    for doc in docs:
+        title = doc.get("title") or ""
+        abstract = doc.get("abstract") or ""
+        combined = f"{title}. {abstract}"
+        # 🔥 FIXED: Truncate strings to prevent token size errors
+        texts.append(combined[:4000])
 
     try:
-        # 🔥 Voyage reranking
+        # Voyage reranking
         result = client.rerank(
             query=query,
             documents=texts,
@@ -41,7 +60,7 @@ def process_documents(query: str, pubmed_docs: List[Dict], openalex_docs: List[D
 
     except Exception as e:
         print("❌ Rerank failed:", e)
-        # fallback → no rerank
+        # fallback → no rerank, but now at least it's deduped and relevance-sorted from the API
         ranked_docs = docs
 
     top_docs = ranked_docs[:8]

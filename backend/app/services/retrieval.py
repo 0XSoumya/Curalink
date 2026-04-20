@@ -3,13 +3,13 @@ import asyncio
 import xml.etree.ElementTree as ET
 from typing import List, Dict
 
-# 🔹 Config
-PUBMED_BATCH = 50
-OPENALEX_BATCH = 50
-CLINICAL_BATCH = 50
+# 🔹 Config (Optimized for ~200 docs total across 4 expanded queries)
+PUBMED_BATCH = 20     # 20 docs * 4 queries = 80 max
+OPENALEX_BATCH = 20   # 20 docs * 4 queries = 80 max
+CLINICAL_BATCH = 15   # 15 docs * 4 queries = 60 max
 
-PUBMED_PAGES = 3
-OPENALEX_PAGES = 3
+PUBMED_PAGES = 1      # Reduced from 3 to prevent over-fetching
+OPENALEX_PAGES = 1    # Reduced from 3 to prevent over-fetching
 
 
 # ---------------------------
@@ -27,6 +27,7 @@ async def fetch_pubmed(query: str) -> List[Dict]:
                 "retmax": PUBMED_BATCH,
                 "retstart": page * PUBMED_BATCH,
                 "retmode": "json",
+                "sort": "relevance" # 🔥 Ensures we get the best matches, not just the newest
             }
 
             try:
@@ -45,6 +46,7 @@ async def fetch_pubmed(query: str) -> List[Dict]:
         # 🔹 Step 2: fetch abstracts via efetch and parse XML properly
         results = []
 
+        # Chunk size matches our batch size now, so this will only loop once
         for i in range(0, len(ids), 50):
             chunk = ids[i:i+50]
 
@@ -107,7 +109,6 @@ async def fetch_pubmed(query: str) -> List[Dict]:
                             "score": 0.0
                         })
                     except Exception:
-                        # If a single article fails to parse, skip it and continue
                         continue
 
             except Exception as e:
@@ -236,8 +237,9 @@ async def retrieve_all(expanded_queries: List[str]):
         else:
             trials.extend(res)
 
+    # 🔥 Slice the final arrays to absolutely guarantee we never exceed 80 per source
     return {
-        "pubmed": pubmed_docs,
-        "openalex": openalex_docs,
-        "clinical_trials": trials
+        "pubmed": pubmed_docs[:80],
+        "openalex": openalex_docs[:80],
+        "clinical_trials": trials[:60]
     }
