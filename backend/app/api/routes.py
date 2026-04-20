@@ -51,7 +51,6 @@ async def chat(request: ChatRequest):
         if not session_data:
             raise HTTPException(status_code=404, detail="Session not found")
 
-    # 🔹 Graph State
     state = {
         "query": request.query,
         "disease": request.disease,
@@ -63,13 +62,11 @@ async def chat(request: ChatRequest):
         "clinical_trials": session_data.get("clinical_trials", [])
     }
 
-    # 🔥 Run Graph
     result = await graph.ainvoke(state)
 
     response_data = result.get("final_output", {})
     response_text = response_data.get("overview", "No response generated")
 
-    # 🔹 Save session
     await db.sessions.update_one(
         {"session_id": session_id},
         {
@@ -78,11 +75,13 @@ async def chat(request: ChatRequest):
                 "buffer_docs": result.get("buffer_docs", []),
                 "clinical_trials": result.get("clinical_trials", []),
                 "last_query": request.query,
+                "updated_at": datetime.utcnow(),
             },
             "$push": {
                 "chat_history": {
                     "query": request.query,
                     "response": response_text,
+                    "full_data": response_data # 🔥 CRITICAL: Save the rich data so old chats load properly
                 }
             },
         },
@@ -92,4 +91,40 @@ async def chat(request: ChatRequest):
         "session_id": session_id,
         "message": response_text,
         "data": response_data
+    }
+
+
+# 🔥 NEW: Fetch list of recent sessions
+@router.get("/sessions")
+async def get_sessions():
+    db = get_db()
+    # Fetch top 20 most recent sessions
+    cursor = db.sessions.find(
+        {"last_query": {"$ne": None}}, # Only fetch sessions where the user actually typed something
+        {"session_id": 1, "last_query": 1, "updated_at": 1}
+    ).sort("updated_at", -1).limit(20)
+    
+    sessions = await cursor.to_list(length=20)
+    
+    return [
+        {
+            "session_id": s["session_id"],
+            "title": s.get("last_query", "New Chat"),
+            "updated_at": s.get("updated_at")
+        }
+        for s in sessions
+    ]
+
+
+# 🔥 NEW: Fetch full history for a specific session
+@router.get("/session/{session_id}")
+async def get_session(session_id: str):
+    db = get_db()
+    session_data = await db.sessions.find_one({"session_id": session_id})
+    if not session_data:
+        raise HTTPException(status_code=404, detail="Session not found")
+    
+    return {
+        "session_id": session_data["session_id"],
+        "chat_history": session_data.get("chat_history", [])
     }
