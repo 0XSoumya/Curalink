@@ -79,8 +79,11 @@ def expand_node(state: GraphState):
     return state
 
 
-# 🔥 Simplified sufficiency logic
 def sufficiency_node(state: GraphState):
+    # 🔥 Initialize our fallback flags
+    state["retrieval_attempted"] = False 
+    state["is_insufficient"] = False     
+
     # If not follow-up OR topic shift → retrieve
     if not state["is_followup"] or state["is_topic_shift"]:
         state["needs_retrieval"] = True
@@ -88,7 +91,7 @@ def sufficiency_node(state: GraphState):
 
     docs = state.get("top_docs", []) + state.get("buffer_docs", [])
 
-    # If docs exist → reuse
+    # If docs exist → reuse initially
     if docs:
         state["needs_retrieval"] = False
     else:
@@ -101,13 +104,15 @@ async def retrieve_node(state: GraphState):
     results = await retrieve_all(state["expanded_queries"])
     state["retrieval_results"] = results
     state["clinical_trials"] = results["clinical_trials"]
+    
+    # 🔥 Mark that we have hit the APIs this turn
+    state["retrieval_attempted"] = True 
     return state
 
 
-# 🔥 FIXED rerank (safe for follow-ups)
 def rerank_node(state: GraphState):
     # If we have fresh retrieval results from the current turn
-    if "retrieval_results" in state and state["retrieval_results"]:
+    if state.get("retrieval_results"):
         top_docs, buffer_docs = process_documents(
             state["final_query"],
             state["retrieval_results"]["pubmed"],
@@ -131,16 +136,27 @@ def rerank_node(state: GraphState):
     return state
 
 
-# 🔥 FIXED reasoning (safe access)
 def reasoning_node(state: GraphState):
     docs = state.get("top_docs", []) + state.get("buffer_docs", [])
 
-    state["final_output"] = generate_response(
+    output = generate_response(
         query=state["final_query"],
         disease=state["parsed"]["disease"],
         docs=docs,
         trials=state.get("clinical_trials", [])
     )
+    
+    state["final_output"] = output
+
+    # 🔥 Check if the LLM declared insufficient evidence
+    overview_text = output.get("overview", "").lower()
+    insights_text = str(output.get("research_insights", [])).lower()
+
+    if "insufficient evidence" in overview_text or "insufficient evidence" in insights_text:
+        state["is_insufficient"] = True
+    else:
+        state["is_insufficient"] = False
+
     return state
 
 
@@ -167,14 +183,23 @@ def build_graph():
     graph.add_edge("rewrite", "expand")
     graph.add_edge("expand", "sufficiency")
 
-    # Conditional routing
-    def route(state: GraphState):
+    # Conditional routing from sufficiency
+    def route_sufficiency(state: GraphState):
         return "retrieve" if state["needs_retrieval"] else "rerank"
 
-    graph.add_conditional_edges("sufficiency", route)
+    graph.add_conditional_edges("sufficiency", route_sufficiency)
 
     graph.add_edge("retrieve", "rerank")
     graph.add_edge("rerank", "reasoning")
-    graph.add_edge("reasoning", END)
+
+    # 🔥 NEW: Conditional routing from reasoning (The Fallback Loop)
+    def route_after_reasoning(state: GraphState):
+        # If evidence is insufficient AND we haven't already tried a fresh retrieval this turn
+        if state.get("is_insufficient") and not state.get("retrieval_attempted"):
+            print("🔄 Insufficient evidence detected. Looping back to retrieve new documents...")
+            return "retrieve"
+        return END
+
+    graph.add_conditional_edges("reasoning", route_after_reasoning)
 
     return graph.compile()

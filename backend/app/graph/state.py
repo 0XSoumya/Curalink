@@ -18,6 +18,10 @@ class GraphState(TypedDict):
 
     is_followup: bool
     needs_retrieval: bool
+    
+    # 🔥 NEW: Tracking variables for the fallback loop
+    retrieval_attempted: bool  
+    is_insufficient: bool      
 
     session_id: str
     chat_history: List[Dict]
