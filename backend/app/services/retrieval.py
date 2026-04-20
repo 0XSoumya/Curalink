@@ -1,5 +1,6 @@
 import httpx
 import asyncio
+import xml.etree.ElementTree as ET
 from typing import List, Dict
 
 # 🔹 Config
@@ -41,7 +42,7 @@ async def fetch_pubmed(query: str) -> List[Dict]:
         if not ids:
             return []
 
-        # 🔹 Step 2: fetch abstracts via efetch
+        # 🔹 Step 2: fetch abstracts via efetch and parse XML properly
         results = []
 
         for i in range(0, len(ids), 50):
@@ -59,21 +60,58 @@ async def fetch_pubmed(query: str) -> List[Dict]:
                     params=params,
                 )
 
-                text = res.text
+                # Parse the XML response
+                root = ET.fromstring(res.text)
 
-                # ⚠️ lightweight parsing (not perfect but works)
-                for pid in chunk:
-                    results.append({
-                        "title": f"PubMed Article {pid}",
-                        "abstract": text[:2000],  # fallback (improves embeddings)
-                        "authors": "",
-                        "year": 2020,
-                        "source": "PubMed",
-                        "url": f"https://pubmed.ncbi.nlm.nih.gov/{pid}/",
-                        "score": 0.0
-                    })
+                for article in root.findall(".//PubmedArticle"):
+                    try:
+                        # Extract PMID
+                        pmid_elem = article.find(".//PMID")
+                        if pmid_elem is None:
+                            continue
+                        pmid = pmid_elem.text
 
-            except:
+                        # Extract Title
+                        title_elem = article.find(".//ArticleTitle")
+                        title = title_elem.text if title_elem is not None else f"PubMed Article {pmid}"
+
+                        # Extract Abstract
+                        abstract_elements = article.findall(".//AbstractText")
+                        abstract_text = " ".join([elem.text for elem in abstract_elements if elem.text])
+                        
+                        # Skip if there's no useful text for the LLM to reason over
+                        if not abstract_text:
+                            continue
+
+                        # Extract Year
+                        year_elem = article.find(".//PubDate/Year")
+                        year = int(year_elem.text) if year_elem is not None else 2020
+
+                        # Extract Authors (First 3 for brevity)
+                        authors = []
+                        for author in article.findall(".//Author")[:3]:
+                            last_name = author.find("LastName")
+                            initials = author.find("Initials")
+                            if last_name is not None and initials is not None:
+                                authors.append(f"{last_name.text} {initials.text}")
+                        
+                        author_str = ", ".join(authors) + (" et al." if len(article.findall(".//Author")) > 3 else "")
+
+                        results.append({
+                            "title": title,
+                            "abstract": abstract_text,
+                            "authors": author_str,
+                            "year": year,
+                            "source": "PubMed",
+                            "url": f"https://pubmed.ncbi.nlm.nih.gov/{pmid}/",
+                            "score": 0.0
+                        })
+                    except Exception:
+                        # If a single article fails to parse, skip it and continue
+                        continue
+
+            except Exception as e:
+                print(f"Failed to fetch or parse PubMed chunk: {e}")
                 continue
 
     return results
