@@ -24,6 +24,11 @@ def clean_json_response(response: str):
     match = re.search(r"\{.*\}", response, re.DOTALL)
     if match:
         return match.group(0)
+    
+    # Check for array if query expansion returns it
+    match_array = re.search(r"\[.*\]", response, re.DOTALL)
+    if match_array:
+        return match_array.group(0)
 
     return response
 
@@ -80,7 +85,7 @@ Location: {location}
 
 
 # ---------------------------
-# 🔹 Query expansion
+# 🔹 Query expansion (BROAD KNOWLEDGE TREE)
 # ---------------------------
 
 def expand_query(query: str, disease: str):
@@ -90,22 +95,23 @@ def expand_query(query: str, disease: str):
 You are generating search queries for a medical research system.
 
 Goal:
-Cover different aspects of the user's intent to maximize retrieval quality.
+Build a broad, comprehensive knowledge tree to maximize semantic retrieval quality.
 
 Instructions:
-- Understand the intent of the query
-- Generate 4 diverse queries:
-  1. Direct query (original intent)
-  2. Broader/general version
-  3. Specific/technical version
-  4. Related aspect (e.g., side effects, mechanisms, outcomes)
+- Understand the intent of the query.
+- Generate exactly 6 diverse queries covering these categories:
+  1. Direct query (the user's exact medical intent)
+  2. Disease Definition / Basics
+  3. Current Standard of Care / Treatments
+  4. Alternative / Emerging Treatments
+  5. Side effects / Risks / Complications
+  6. Clinical Trial Keywords (focused on ongoing research)
 
-- Include disease context where relevant
-- Use medical/scientific phrasing when appropriate
-- Avoid repeating the same wording
+- Include disease context where relevant.
+- Use medical/scientific phrasing when appropriate.
 
-Return ONLY JSON:
-["query1", "query2", "query3", "query4"]
+Return ONLY STRICT JSON array of strings:
+["query1", "query2", "query3", "query4", "query5", "query6"]
 
 Disease: {disease}
 Query: {query}
@@ -116,7 +122,7 @@ Query: {query}
     try:
         return json.loads(clean_json_response(response))
     except:
-        return [f"{query} {disease}"]
+        return [f"{query} {disease}", f"{disease} standard of care", f"{disease} treatments"]
 
 
 # ---------------------------
@@ -155,15 +161,15 @@ Chat history:
 
 
 # ---------------------------
-# 🔥 GROUNDED REASONING ENGINE
+# 🔥 GROUNDED REASONING ENGINE (UNBLINDED)
 # ---------------------------
 
 def generate_response(query, disease, docs, trials):
     disease = disease or ""
 
-    # 🔹 Format docs
+    # 🔹 Format docs (NOW PASSING ALL 20)
     doc_blocks = []
-    for i, d in enumerate(docs[:10]):
+    for i, d in enumerate(docs[:20]):
         doc_blocks.append(f"""
 [Paper {i+1}]
 Title: {d.get('title')}
@@ -187,14 +193,15 @@ Location: {t.get('location')}
     trials_text = "\n".join(trial_blocks)
 
     prompt = f"""
-You are a STRICT medical research assistant.
+You are a highly capable medical research assistant.
 
 Rules:
-- ONLY use provided papers
-- DO NOT use outside knowledge
-- If missing info → say "insufficient evidence"
-- Every insight MUST cite [Paper X]
-- Be concise and specific
+- ONLY use provided papers and trials.
+- DO NOT use outside knowledge.
+- Synthesize what is available. If the exact answer is missing but related context exists, provide it and note the gap in research.
+- ONLY state "insufficient evidence" if the provided text is completely irrelevant to the disease and query.
+- Every insight MUST cite [Paper X].
+- Be concise and specific.
 
 -------------------------------------
 
@@ -232,7 +239,7 @@ Return STRICT JSON:
             "clinical_trials": [],
         }
 
-    # 🔹 Sources
+    # 🔹 Sources (Keep UI sources to top 8 per hackathon requirements)
     sources = []
     for d in docs[:8]:
         sources.append({

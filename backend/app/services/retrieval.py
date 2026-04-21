@@ -3,13 +3,13 @@ import asyncio
 import xml.etree.ElementTree as ET
 from typing import List, Dict
 
-# 🔹 Config (Optimized for ~200 docs total across 4 expanded queries)
-PUBMED_BATCH = 20     # 20 docs * 4 queries = 80 max
-OPENALEX_BATCH = 20   # 20 docs * 4 queries = 80 max
-CLINICAL_BATCH = 15   # 15 docs * 4 queries = 60 max
+# 🔹 Config (Optimized for ~180-200 docs total across 6 expanded queries)
+PUBMED_BATCH = 15     # 15 docs * 6 queries = 90 max
+OPENALEX_BATCH = 15   # 15 docs * 6 queries = 90 max
+CLINICAL_BATCH = 10   # 10 docs * 6 queries = 60 max
 
-PUBMED_PAGES = 1      # Reduced from 3 to prevent over-fetching
-OPENALEX_PAGES = 1    # Reduced from 3 to prevent over-fetching
+PUBMED_PAGES = 1      # Kept at 1 to prevent over-fetching
+OPENALEX_PAGES = 1    # Kept at 1 to prevent over-fetching
 
 
 # ---------------------------
@@ -32,7 +32,7 @@ async def fetch_pubmed(query: str) -> List[Dict]:
 
             try:
                 res = await client.get(
-                    "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi",
+                    "[https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi](https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi)",
                     params=params,
                 )
                 data = res.json()
@@ -58,7 +58,7 @@ async def fetch_pubmed(query: str) -> List[Dict]:
 
             try:
                 res = await client.get(
-                    "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi",
+                    "[https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi](https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi)",
                     params=params,
                 )
 
@@ -105,7 +105,7 @@ async def fetch_pubmed(query: str) -> List[Dict]:
                             "authors": author_str,
                             "year": year,
                             "source": "PubMed",
-                            "url": f"https://pubmed.ncbi.nlm.nih.gov/{pmid}/",
+                            "url": f"[https://pubmed.ncbi.nlm.nih.gov/](https://pubmed.ncbi.nlm.nih.gov/){pmid}/",
                             "score": 0.0
                         })
                     except Exception:
@@ -146,7 +146,7 @@ async def fetch_openalex(query: str) -> List[Dict]:
 
             try:
                 res = await client.get(
-                    "https://api.openalex.org/works",
+                    "[https://api.openalex.org/works](https://api.openalex.org/works)",
                     params=params,
                 )
                 data = res.json()
@@ -178,7 +178,7 @@ async def fetch_clinical_trials(query: str) -> List[Dict]:
     async with httpx.AsyncClient(timeout=20) as client:
         try:
             res = await client.get(
-                "https://clinicaltrials.gov/api/query/study_fields",
+                "[https://clinicaltrials.gov/api/query/study_fields](https://clinicaltrials.gov/api/query/study_fields)",
                 params={
                     "expr": query,
                     "fields": "NCTId,BriefTitle,OverallStatus,LocationCity,EligibilityCriteria",
@@ -197,7 +197,7 @@ async def fetch_clinical_trials(query: str) -> List[Dict]:
                     "eligibility": s.get("EligibilityCriteria", [""])[0],
                     "location": s.get("LocationCity", [""])[0],
                     "contact": "",
-                    "url": f"https://clinicaltrials.gov/study/{s.get('NCTId', [''])[0]}"
+                    "url": f"[https://clinicaltrials.gov/study/](https://clinicaltrials.gov/study/){s.get('NCTId', [''])[0]}"
                 }
                 for s in studies
             ]
@@ -237,9 +237,9 @@ async def retrieve_all(expanded_queries: List[str]):
         else:
             trials.extend(res)
 
-    # 🔥 Slice the final arrays to absolutely guarantee we never exceed 80 per source
+    # 🔥 Slice the final arrays to guarantee we never exceed 90 per source (keeping total under 200)
     return {
-        "pubmed": pubmed_docs[:80],
-        "openalex": openalex_docs[:80],
+        "pubmed": pubmed_docs[:90],
+        "openalex": openalex_docs[:90],
         "clinical_trials": trials[:60]
     }
